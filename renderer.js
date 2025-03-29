@@ -45,19 +45,3 @@ ipcRenderer.on('file-saved', (event, filePath) => {
     currentFilePath = filePath;
     document.title = `Bloc-Notes - ${filePath}`;
 });
-
-ipcRenderer.on('check-modifications', async () => {
-    if (!isModified) {
-        ipcRenderer.send('quit-app', true); // Aucun changement, on quitte
-        return;
-    }
-
-    const response = await ipcRenderer.invoke('show-save-dialog');
-
-    if (response === 0) { // "Enregistrer"
-        document.getElementById('save').click(); // Simule un clic sur "Sauvegarder"
-        setTimeout(() => ipcRenderer.send('quit-app', true), 500); // Quitter après la sauvegarde
-    } else if (response === 1) { // "Quitter sans enregistrer"
-        ipcRenderer.send('quit-app', true);
-    }
-});

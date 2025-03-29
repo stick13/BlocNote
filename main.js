@@ -106,29 +106,6 @@ ipcMain.on('save-as', async (event, content) => {
     }
 });
 
-// 📅 Intercepter la fermeture avant qu'elle ne se produise
-app.on('before-quit', (event) => {
-    // Empêche la fermeture immédiate de l'application
-    if (mainWindow && !mainWindow.isDestroyed()) {  // Vérifie si mainWindow est encore actif
-        event.preventDefault();  // Empêche la fermeture immédiate
-        mainWindow.webContents.send('check-modifications');  // Envoie un message au renderer pour vérifier si des modifications sont présentes
-    }
-});
-
-// 📦 Afficher la boîte de dialogue avant de quitter
-ipcMain.handle('show-save-dialog', async () => {
-    const result = await dialog.showMessageBox({
-        type: 'warning',
-        buttons: ['Enregistrer', 'Quitter sans enregistrer', 'Annuler'],
-        defaultId: 0,
-        cancelId: 2,
-        title: 'Fichier non enregistré',
-        message: 'Vous avez des modifications non enregistrées. Voulez-vous les sauvegarder ?'
-    });
-
-    return result.response;
-});
-
 // Quitter l'application si l'utilisateur le souhaite
 ipcMain.on('quit-app', (event, shouldQuit) => {
     if (shouldQuit) app.quit();
