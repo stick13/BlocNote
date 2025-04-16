@@ -4,9 +4,30 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bloc-Notes Electron</title>
+    <style>
+        /* Style des onglets */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #ddd;
+        }
+        .tab {
+            padding: 10px;
+            cursor: pointer;
+            margin-right: 5px;
+            background-color: #f0f0f0;
+            border-radius: 5px 5px 0 0;
+        }
+        .tab.active {
+            background-color: #ccc;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
-    <h1>Bienvenue dans ton Bloc-Notes !</h1>
+    <!-- Supprimer la ligne suivante -->
+    <!-- <h1>Bienvenue dans ton Bloc-Notes !</h1> -->
+
+    <div class="tabs" id="tabs"></div>
 
     <button id="openFile">📂 Ouvrir un fichier</button>
     <button id="save">💾 Sauvegarder</button>
