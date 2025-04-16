@@ -8,6 +8,14 @@ let tabs = []; // Tableau pour suivre les onglets ouverts
 
 // Fonction pour créer un nouvel onglet
 function createTab(filePath) {
+    // Vérifier si le fichier est déjà ouvert
+    const existingTab = tabs.find(tab => tab.filePath === filePath);
+    if (existingTab) {
+        // Si l'onglet existe déjà, on le rend actif et on charge le contenu
+        setActiveTab(filePath);
+        return;
+    }
+
     const tabContainer = document.getElementById('tabs');
     const tab = document.createElement('div');
     tab.classList.add('tab');
