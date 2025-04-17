@@ -1,178 +1,155 @@
 const { ipcRenderer } = require('electron');
 const path = require('path');
 
-let currentFilePath = null;
-let isModified = false; // Indique si le contenu de l'éditeur a changé
+const editor        = document.getElementById('editor');
+const tabsContainer = document.getElementById('tabs');
+const newTabButton  = document.getElementById('new-tab');
+const openButton    = document.getElementById('openFile');
+const saveButton    = document.getElementById('save');
+const saveAsButton  = document.getElementById('saveAs');
 
-// Tableau pour gérer les onglets ouverts ; chaque objet aura les clés { filePath, tab, tabLabel }
-let tabs = [];
+let tabCounter    = 1;
+let currentTabId  = null;
+const tabData     = {};
 
-/**
- * Crée un nouvel onglet ou active celui existant.
- * Chaque onglet est composé d'un libellé et d'un bouton de fermeture.
- */
-function createTab(filePath) {
-  // Si un onglet avec ce filePath existe déjà, le simple activer
-  const existingTab = tabs.find(tabObj => tabObj.filePath === filePath);
-  if (existingTab) {
-    setActiveTab(filePath);
-    return;
-  }
-
-  const tabContainer = document.getElementById('tabs');
-  const tab = document.createElement('div');
+/** Crée et active un onglet */
+function createTab(title = `Nouveau fichier ${tabCounter++}`, content = "", filePath = null) {
+  const tabId = `tab-${Date.now()}`;
+  const tab   = document.createElement('div');
   tab.classList.add('tab');
+  tab.dataset.id = tabId;
 
-  // Création du libellé de l'onglet (affiche le nom de fichier)
-  const tabLabel = document.createElement('span');
-  tabLabel.classList.add('tab-label');
-  tabLabel.textContent = filePath ? path.basename(filePath) : "Nouveau fichier";
-  tab.appendChild(tabLabel);
+  // Label
+  const label = document.createElement('span');
+  label.classList.add('tab-label');
+  label.textContent = title;
+  tab.appendChild(label);
 
-  // Création du bouton de fermeture
+  // Croix de fermeture
   const closeBtn = document.createElement('span');
   closeBtn.classList.add('close-btn');
-  closeBtn.textContent = '❌';
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    closeTab(tabId);
+  });
   tab.appendChild(closeBtn);
 
-  // Insérer cet onglet AVANT le bouton "nouvel onglet"
-  const newTabElem = document.getElementById('new-tab');
-  tabContainer.insertBefore(tab, newTabElem);
+  // Clic pour activer
+  tab.addEventListener('click', () => switchTab(tabId));
 
-  // Activation de l'onglet au clic sur celui-ci
-  tab.addEventListener('click', () => {
-    setActiveTab(filePath);
-  });
+  // Insère AVANT le bouton "+", qui reste en dernier
+  tabsContainer.insertBefore(tab, newTabButton);
 
-  // Gestion de la fermeture de l'onglet
-  closeBtn.addEventListener('click', (e) => {
-    e.stopPropagation(); // Empêcher l'activation lors du clic sur la croix
-    removeTab(filePath);
-  });
+  // Stocke les données de l'onglet
+  tabData[tabId] = {
+    title,
+    content,
+    originalContent: content,
+    filePath,
+    isModified: false
+  };
 
-  // Ajouter cet onglet à la liste des onglets et l'activer
-  tabs.push({ filePath, tab, tabLabel });
-  setActiveTab(filePath);
+  switchTab(tabId);
 }
 
-/**
- * Supprime l'onglet identifié par filePath.
- * Si l'onglet fermé était actif et que plus aucun onglet n'existe, envoie un message pour fermer l'application.
- */
-function removeTab(filePath) {
-  const index = tabs.findIndex(tabObj => tabObj.filePath === filePath);
-  if (index === -1) return;
-
-  // Supprimer l'élément DOM correspondant et le retirer du tableau
-  const tabObj = tabs[index];
-  tabObj.tab.remove();
-  tabs.splice(index, 1);
-
-  // Si l'onglet supprimé était actif
-  if (currentFilePath === filePath) {
-    if (tabs.length > 0) {
-      // Active l'onglet précédent (si possible) ou le premier onglet restant
-      const newActiveTab = tabs[index - 1] || tabs[0];
-      setActiveTab(newActiveTab.filePath);
-    } else {
-      // Aucun onglet restant : demander la fermeture de l'application
-      ipcRenderer.send('close-app');
+/** Active un onglet existant */
+function switchTab(tabId) {
+    if (tabId === currentTabId) return;
+  
+    // 🔒 Si l’ancien onglet n’existe plus, on skippe la sauvegarde
+    if (currentTabId && tabData[currentTabId]) {
+      const prev = tabData[currentTabId];
+      prev.content = editor.value;
+      updateTabTitle(currentTabId);
+      tabsContainer
+        .querySelector(`.tab[data-id="${currentTabId}"]`)
+        .classList.remove('active');
     }
+  
+    currentTabId = tabId;
+    const data = tabData[tabId];
+    editor.value = data.content;
+    tabsContainer
+      .querySelector(`.tab[data-id="${tabId}"]`)
+      .classList.add('active');
   }
+
+/** Met à jour l’apparence du titre (astérisque si modifié) */
+function updateTabTitle(tabId) {
+  const data = tabData[tabId];
+  const tab  = tabsContainer.querySelector(`.tab[data-id="${tabId}"]`);
+  const label = tab.querySelector('.tab-label');
+  label.textContent = data.title;
+  tab.classList.toggle('modified', data.isModified);
 }
 
-/**
- * Définit l'onglet actif et charge son contenu.
- * En cas de modifications non sauvegardées dans l'onglet courant, une confirmation est demandée.
- */
-function setActiveTab(filePath) {
-  if (isModified && currentFilePath && currentFilePath !== filePath) {
-    const confirmation = confirm("Le fichier en cours contient des modifications non sauvegardées. Voulez-vous continuer ?");
-    if (!confirmation) return;
-  }
-
-  tabs.forEach(tabObj => {
-    if (tabObj.filePath === filePath) {
-      tabObj.tab.classList.add('active');
-      currentFilePath = filePath;
-      loadFileContent(filePath);
-      isModified = false;
-    } else {
-      tabObj.tab.classList.remove('active');
+/** Ferme un onglet et, s’il n’en reste plus, ferme l’app */
+function closeTab(tabId) {
+    // Liste les onglets visibles (hors "+")
+    const allTabs = Array.from(tabsContainer.querySelectorAll('.tab'))
+                         .filter(t => t.id !== 'new-tab');
+    const idx       = allTabs.findIndex(t => t.dataset.id === tabId);
+    const wasActive = (tabId === currentTabId);
+  
+    let nextTabId = null;
+    if (wasActive) {
+      // Essaie le suivant, sinon le précédent
+      if (allTabs[idx + 1])      nextTabId = allTabs[idx + 1].dataset.id;
+      else if (allTabs[idx - 1]) nextTabId = allTabs[idx - 1].dataset.id;
+  
+      if (nextTabId) {
+        // Switch **avant** suppression
+        switchTab(nextTabId);
+      } else {
+        // Pas de suivant → on quitte
+        ipcRenderer.send('close-app');
+        return;
+      }
     }
-  });
-}
+  
+    // Ensuite on supprime l’onglet fermé
+    const tabElem = tabsContainer.querySelector(`.tab[data-id="${tabId}"]`);
+    if (tabElem) tabElem.remove();
+    delete tabData[tabId];
+  }  
 
-/**
- * Charge le contenu d'un fichier à partir du localStorage.
- */
-function loadFileContent(filePath) {
-  const content = localStorage.getItem(filePath) || '';
-  document.getElementById('editor').value = content;
-  document.title = `Bloc-Notes - ${filePath}`;
-}
-
-// Détection des modifications dans l'éditeur
-document.getElementById('editor').addEventListener('input', () => {
-  isModified = true;
-  if (currentFilePath) {
-    localStorage.setItem(currentFilePath, document.getElementById('editor').value);
-  }
+// Détecte les modifs dans l’éditeur
+editor.addEventListener('input', () => {
+  if (!currentTabId) return;
+  const data = tabData[currentTabId];
+  data.content = editor.value;
+  data.isModified = data.content !== data.originalContent;
+  updateTabTitle(currentTabId);
 });
 
-// Réception d'un fichier ouvert (depuis le main process)
-ipcRenderer.on('file-opened', (event, content, filePath) => {
-  createTab(filePath);
-  document.getElementById('editor').value = content;
-  localStorage.setItem(filePath, content);
-  currentFilePath = filePath;
-
-  const tabObj = tabs.find(tabObj => tabObj.filePath === filePath);
-  if (tabObj) {
-    tabObj.tabLabel.textContent = path.basename(filePath);
-  }
-  document.title = `Bloc-Notes - ${filePath}`;
+// Boutons
+newTabButton.addEventListener('click',  () => createTab());
+openButton.addEventListener('click',    () => ipcRenderer.send('open-file'));
+saveButton.addEventListener('click',    () => {
+  if (!currentTabId) return;
+  ipcRenderer.invoke('save-file', tabData[currentTabId].content);
+});
+saveAsButton.addEventListener('click',  () => {
+  if (!currentTabId) return;
+  ipcRenderer.send('save-as', tabData[currentTabId].content);
 });
 
-// Activation du bouton "Ouvrir un fichier"
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('openFile').addEventListener('click', () => {
-    ipcRenderer.send('open-file');
-  });
+// À la réception d'un fichier (ou d’un nouveau)
+ipcRenderer.on('file-opened', (e, content, filePath) => {
+  const title = filePath
+    ? path.basename(filePath)
+    : `Nouveau fichier ${tabCounter++}`;
+  createTab(title, content, filePath);
 });
 
-// Gestion du bouton "Sauvegarder"
-// Si le fichier est nouveau (ou temporaire), déclenche "Enregistrer sous...", sinon sauvegarde directement.
-document.getElementById('save').addEventListener('click', () => {
-  const content = document.getElementById('editor').value;
-  if (!currentFilePath || currentFilePath.startsWith("Nouveau-")) {
-    ipcRenderer.send('save-as', content);
-  } else {
-    ipcRenderer.invoke('save-file', content);
-  }
-});
-
-// Mise à jour de l'onglet après sauvegarde
-ipcRenderer.on('file-saved', (event, newFilePath) => {
-  const activeTab = tabs.find(tabObj => tabObj.tab.classList.contains('active'));
-  if (activeTab) {
-    activeTab.filePath = newFilePath;
-    activeTab.tabLabel.textContent = path.basename(newFilePath);
-  }
-  currentFilePath = newFilePath;
-  document.title = `Bloc-Notes - ${newFilePath}`;
-});
-
-// Bouton "Enregistrer sous..."
-document.getElementById('saveAs').addEventListener('click', () => {
-  const content = document.getElementById('editor').value;
-  ipcRenderer.send('save-as', content);
-});
-
-// Bouton pour créer un nouvel onglet (fichier temporaire)
-document.getElementById('new-tab').addEventListener('click', () => {
-  const tempFilePath = `Nouveau-${Date.now()}`;
-  createTab(tempFilePath);
-  localStorage.setItem(tempFilePath, '');
-  document.getElementById('editor').value = '';
+// À la réception d’un enregistrement
+ipcRenderer.on('file-saved', (e, savedPath) => {
+  if (!currentTabId) return;
+  const data = tabData[currentTabId];
+  data.originalContent = data.content;
+  data.filePath = savedPath;
+  data.title = path.basename(savedPath);
+  data.isModified = false;
+  updateTabTitle(currentTabId);
 });
