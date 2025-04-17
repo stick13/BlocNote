@@ -8,10 +8,8 @@ let tabs = []; // Tableau pour suivre les onglets ouverts
 
 // Fonction pour créer un nouvel onglet
 function createTab(filePath) {
-    // Vérifier si le fichier est déjà ouvert
     const existingTab = tabs.find(tab => tab.filePath === filePath);
     if (existingTab) {
-        // Si l'onglet existe déjà, on le rend actif et on charge le contenu
         setActiveTab(filePath);
         return;
     }
@@ -20,16 +18,39 @@ function createTab(filePath) {
     const tab = document.createElement('div');
     tab.classList.add('tab');
     tab.textContent = filePath ? filePath.split("\\").pop() : "Nouveau fichier";
-    tabContainer.appendChild(tab);
-    
-    // Cliquer sur un onglet pour afficher son contenu
+
+    // 🔴 Ajouter le bouton de fermeture ❌
+    const closeBtn = document.createElement('span');
+    closeBtn.textContent = '❌';
+    closeBtn.classList.add('close-btn');
+    tab.appendChild(closeBtn);
+
+    // ⬅️ Ajouter avant le "+" (donc à gauche du new-tab dans flex-row-reverse)
+    tabContainer.insertBefore(tab, document.getElementById('new-tab'));
+
+    // 📂 Clic pour activer l'onglet
     tab.addEventListener('click', () => {
         setActiveTab(filePath);
+    });
+
+    // ❌ Supprimer l'onglet
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Empêche le clic d'activer l'onglet
+        tab.remove();
+        tabs = tabs.filter(t => t.filePath !== filePath);
+
+        // Si on ferme l'onglet actif
+        if (currentFilePath === filePath) {
+            document.getElementById('editor').value = '';
+            document.title = 'Bloc-Notes';
+            currentFilePath = null;
+        }
     });
 
     tabs.push({ filePath, tab });
     setActiveTab(filePath);
 }
+
 
 // Fonction pour définir l'onglet actif
 function setActiveTab(filePath) {
@@ -68,8 +89,12 @@ ipcRenderer.on('file-opened', (event, content, filePath) => {
     currentFilePath = filePath;
 
     const filePathElement = document.getElementById('file-path');
-    filePathElement.textContent = `Fichier ouvert : ${filePath}`;
-    filePathElement.style.display = 'block';
+    if (filePath) {
+        filePathElement.textContent = `Fichier ouvert : ${filePath}`;
+        filePathElement.style.display = 'block';
+    } else {
+        filePathElement.style.display = 'none';
+    }
 });
 
 // 📂 Ouvrir un fichier
@@ -89,9 +114,14 @@ document.getElementById('save').addEventListener('click', () => {
 ipcRenderer.on('file-saved', (event, filePath) => {
     currentFilePath = filePath;
     const filePathElement = document.getElementById('file-path');
-    filePathElement.textContent = `Fichier enregistré : ${filePath}`;
-    filePathElement.style.display = 'block';
-    document.title = `Bloc-Notes - ${filePath}`;
+
+    if (filePath) {
+        filePathElement.textContent = `Fichier enregistré : ${filePath}`;
+        filePathElement.style.display = 'block';
+        document.title = `Bloc-Notes - ${filePath}`;
+    } else {
+        filePathElement.style.display = 'none';
+    }
 });
 
 // 💾 Enregistrer sous...
@@ -100,8 +130,9 @@ document.getElementById('saveAs').addEventListener('click', () => {
     ipcRenderer.send('save-as', content); // Envoie le texte au processus principal
 });
 
-// Corriger l'événement file-saved pour éviter la répétition
-ipcRenderer.on('file-saved', (event, filePath) => {
-    currentFilePath = filePath;
-    document.title = `Bloc-Notes - ${filePath}`;
+// Créer un nouvel onglet vide avec un fichier temporaire
+document.getElementById('new-tab').addEventListener('click', () => {
+    const tempFilePath = `Nouveau-${Date.now()}`; // nom temporaire unique
+    createTab(tempFilePath);
+    localStorage.setItem(tempFilePath, ''); // Contenu vide par défaut
 });
