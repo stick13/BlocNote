@@ -3,112 +3,127 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-let mainWindow;       // Fenêtre principale (Accueil)
-let editorWindow;     // Fenêtre d'édition
+let mainWindow = null;       // Fenêtre principale (Accueil)
+let editorWindow = null;     // Fenêtre d'édition
 let currentFilePath = null;  // Stocke le chemin du fichier actuellement ouvert
 
 // 🔹 Fonction pour créer la fenêtre principale (Accueil)
 function createMainWindow() {
-    mainWindow = new BrowserWindow({
-        width: 600,
-        height: 400,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-        }
-    });
+  mainWindow = new BrowserWindow({
+    width: 600,
+    height: 400,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
 
-    // Charger la page d’accueil
-    mainWindow.loadFile('index.html');
+  mainWindow.loadFile('index.html');
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
 // 🔹 Fonction pour créer la fenêtre de l'éditeur
 function createEditorWindow(filePath = null, content = "") {
-    editorWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-        }
-    });
+  editorWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
 
-    // Charger la page éditeur
-    editorWindow.loadFile('editor.html');
+  editorWindow.loadFile('editor.html');
 
-    // Envoyer le contenu du fichier à l’éditeur après chargement
-    editorWindow.webContents.once('did-finish-load', () => {
-        editorWindow.webContents.send('file-opened', content, filePath);
-    });
+  // Une fois le chargement terminé, envoyer le contenu au renderer
+  editorWindow.webContents.once('did-finish-load', () => {
+    editorWindow.webContents.send('file-opened', content, filePath);
+  });
 
-    // Fermer la fenêtre principale après ouverture de l'éditeur
+  editorWindow.on('closed', () => {
+    editorWindow = null;
+  });
+
+  // Fermer la fenêtre principale après création de l'éditeur (si elle existe)
+  if (mainWindow) {
     mainWindow.close();
+    mainWindow = null;
+  }
 }
 
-// 📂 Gérer l’ouverture d’un fichier
+// 📂 Gestion de l'ouverture d'un fichier
 ipcMain.on('open-file', async () => {
-    const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [{ name: 'Text Files', extensions: ['txt'] }]
-    });
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'Text Files', extensions: ['txt'] }]
+  });
 
-    if (!result.canceled) {
-        currentFilePath = result.filePaths[0];
-        const fileContent = fs.readFileSync(currentFilePath, 'utf8');
-        
-        if (editorWindow) {
-            // Si l'éditeur est ouvert, charger directement le fichier
-            editorWindow.webContents.send('file-opened', fileContent, currentFilePath);
-        } else {
-            // Sinon, ouvrir l'éditeur
-            createEditorWindow(currentFilePath, fileContent);
-        }
+  if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+    currentFilePath = result.filePaths[0];
+    const fileContent = fs.readFileSync(currentFilePath, 'utf8');
+
+    if (editorWindow) {
+      // Si l'éditeur est déjà ouvert, envoyer le contenu du fichier
+      editorWindow.webContents.send('file-opened', fileContent, currentFilePath);
+    } else {
+      // Sinon, créer l'éditeur avec le fichier ouvert
+      createEditorWindow(currentFilePath, fileContent);
     }
+  }
 });
 
 // 📝 Gestion de la création d'un nouveau fichier
 ipcMain.on('new-file', () => {
-    createEditorWindow();
+  createEditorWindow(null, "");
 });
 
-// 💾 Gestion de la sauvegarde des fichiers
+// 💾 Gestion de la sauvegarde simple des fichiers
 ipcMain.handle('save-file', async (event, content) => {
-    if (currentFilePath) {
-        // Si un fichier est déjà ouvert, on l’écrase
-        fs.writeFileSync(currentFilePath, content, 'utf8');
-        event.sender.send('file-saved', currentFilePath);
-    } else {
-        // Sinon, on ouvre une boîte de dialogue pour demander un nom
-        const result = await dialog.showSaveDialog(editorWindow, {
-            filters: [{ name: 'Text Files', extensions: ['txt'] }]
-        });
-
-        if (!result.canceled) {
-            currentFilePath = result.filePath;
-            fs.writeFileSync(currentFilePath, content, 'utf8');
-            event.sender.send('file-saved', currentFilePath);
-        }
-    }
-});
-
-// 💾 Enregistrer sous ...
-ipcMain.on('save-as', async (event, content) => {
-    const result = await dialog.showSaveDialog(mainWindow, {
-        title: 'Enregistrer sous...',
-        defaultPath: 'nouveau_fichier.txt',
-        filters: [{ name: 'Text Files', extensions: ['txt'] }]
+  if (currentFilePath) {
+    // Fichier existant : on écrit directement
+    fs.writeFileSync(currentFilePath, content, 'utf8');
+    event.sender.send('file-saved', currentFilePath);
+  } else {
+    // Pour un nouveau fichier, déclencher "Enregistrer sous..."
+    const win = editorWindow || BrowserWindow.getFocusedWindow();
+    const result = await dialog.showSaveDialog(win, {
+      filters: [{ name: 'Text Files', extensions: ['txt'] }]
     });
-
-    if (!result.canceled) {
-        fs.writeFileSync(result.filePath, content, 'utf8');
-        currentFilePath = result.filePath; // Met à jour le chemin actuel
-        event.sender.send('file-saved', result.filePath); // Informe le renderer
+    if (!result.canceled && result.filePath) {
+      currentFilePath = result.filePath;
+      fs.writeFileSync(currentFilePath, content, 'utf8');
+      event.sender.send('file-saved', currentFilePath);
     }
+  }
 });
 
-// Quitter l'application si l'utilisateur le souhaite
+// 💾 Gestion d'"Enregistrer sous..."
+ipcMain.on('save-as', async (event, content) => {
+  const win = editorWindow || BrowserWindow.getFocusedWindow();
+  const result = await dialog.showSaveDialog(win, {
+    title: 'Enregistrer sous...',
+    defaultPath: 'nouveau_fichier.txt',
+    filters: [{ name: 'Text Files', extensions: ['txt'] }]
+  });
+  if (!result.canceled && result.filePath) {
+    fs.writeFileSync(result.filePath, content, 'utf8');
+    currentFilePath = result.filePath;
+    event.sender.send('file-saved', result.filePath);
+  }
+});
+
+// 📌 Réception du message pour fermer l'application (par exemple, quand le dernier onglet se ferme)
+ipcMain.on('close-app', () => {
+  console.log("close-app reçu, fermeture de l'application.");
+  app.quit();
+});
+
+// (Optionnel) Autre canal pour quitter explicitement
 ipcMain.on('quit-app', (event, shouldQuit) => {
-    if (shouldQuit) app.quit();
+  if (shouldQuit) app.quit();
 });
 
 // ⚡ Lancer l'application lorsque Electron est prêt
@@ -116,7 +131,14 @@ app.whenReady().then(createMainWindow);
 
 // Quitter l'application lorsque toutes les fenêtres sont fermées (sauf sur macOS)
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// Sur macOS, recréer une fenêtre si l'app est activée et qu'aucune fenêtre n'est ouverte
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createMainWindow();
+  }
 });

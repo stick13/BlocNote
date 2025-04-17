@@ -1,24 +1,24 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bloc-Notes Electron</title>
-    <link rel="stylesheet" href="css/editor.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bloc-Notes Electron</title>
+  <link rel="stylesheet" href="css/editor.css">
 </head>
 <body>
-    <div class="tabs" id="tabs">
-        <!-- Onglets générés dynamiquement ici -->
-        <div class="tab plus" id="new-tab">+</div>
-    </div>    
+  <div class="tabs" id="tabs">
+    <!-- Onglets générés dynamiquement ici -->
+    <div class="tab plus" id="new-tab">+</div>
+  </div>
 
-    <button id="openFile">📂 Ouvrir un fichier</button>
-    <button id="save">💾 Sauvegarder</button>
-    <button id="saveAs">💾 Enregistrer sous...</button>
+  <button id="openFile">📂 Ouvrir un fichier</button>
+  <button id="save">💾 Sauvegarder</button>
+  <button id="saveAs">💾 Enregistrer sous...</button>
 
-    <p id="file-path" style="display: none;"></p>
-    <textarea id="editor" style="width: 100%; height: 80vh;"></textarea>
+  <p id="file-path" style="display: none;"></p>
+  <textarea id="editor" style="width: 100%; height: 80vh;"></textarea>
 
-    <script src="renderer.js"></script>
+  <script src="renderer.js"></script>
 </body>
 </html>
