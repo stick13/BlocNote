@@ -64,8 +64,12 @@ document.getElementById('editor').addEventListener('input', () => {
 ipcRenderer.on('file-opened', (event, content, filePath) => {
     createTab(filePath);
     document.getElementById('editor').value = content;
-    localStorage.setItem(filePath, content); // Sauvegarder le contenu localement
-    currentFilePath = filePath; 
+    localStorage.setItem(filePath, content);
+    currentFilePath = filePath;
+
+    const filePathElement = document.getElementById('file-path');
+    filePathElement.textContent = `Fichier ouvert : ${filePath}`;
+    filePathElement.style.display = 'block';
 });
 
 // 📂 Ouvrir un fichier
@@ -84,7 +88,9 @@ document.getElementById('save').addEventListener('click', () => {
 // ✅ Mise à jour de l'affichage après sauvegarde
 ipcRenderer.on('file-saved', (event, filePath) => {
     currentFilePath = filePath;
-    document.getElementById('file-path').textContent = `Fichier enregistré: ${filePath}`;
+    const filePathElement = document.getElementById('file-path');
+    filePathElement.textContent = `Fichier enregistré : ${filePath}`;
+    filePathElement.style.display = 'block';
     document.title = `Bloc-Notes - ${filePath}`;
 });
 
