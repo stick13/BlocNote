@@ -19,13 +19,11 @@ function createTab(title = `Nouveau fichier ${tabCounter++}`, content = "", file
   tab.classList.add('tab');
   tab.dataset.id = tabId;
 
-  // Label
   const label = document.createElement('span');
   label.classList.add('tab-label');
   label.textContent = title;
   tab.appendChild(label);
 
-  // Croix de fermeture
   const closeBtn = document.createElement('span');
   closeBtn.classList.add('close-btn');
   closeBtn.textContent = '×';
@@ -35,13 +33,9 @@ function createTab(title = `Nouveau fichier ${tabCounter++}`, content = "", file
   });
   tab.appendChild(closeBtn);
 
-  // Clic pour activer
   tab.addEventListener('click', () => switchTab(tabId));
-
-  // Insère AVANT le bouton "+", qui reste en dernier
   tabsContainer.insertBefore(tab, newTabButton);
 
-  // Stocke les données de l'onglet
   tabData[tabId] = {
     title,
     content,
@@ -55,27 +49,25 @@ function createTab(title = `Nouveau fichier ${tabCounter++}`, content = "", file
 
 /** Active un onglet existant */
 function switchTab(tabId) {
-    if (tabId === currentTabId) return;
-  
-    // 🔒 Si l’ancien onglet n’existe plus, on skippe la sauvegarde
-    if (currentTabId && tabData[currentTabId]) {
-      const prev = tabData[currentTabId];
-      prev.content = editor.value;
-      updateTabTitle(currentTabId);
-      tabsContainer
-        .querySelector(`.tab[data-id="${currentTabId}"]`)
-        .classList.remove('active');
-    }
-  
-    currentTabId = tabId;
-    const data = tabData[tabId];
-    editor.value = data.content;
+  if (tabId === currentTabId) return;
+
+  if (currentTabId && tabData[currentTabId]) {
+    tabData[currentTabId].content = editor.value;
+    updateTabTitle(currentTabId);
     tabsContainer
-      .querySelector(`.tab[data-id="${tabId}"]`)
-      .classList.add('active');
+      .querySelector(`.tab[data-id="${currentTabId}"]`)
+      .classList.remove('active');
   }
 
-/** Met à jour l’apparence du titre (astérisque si modifié) */
+  currentTabId = tabId;
+  const data = tabData[tabId];
+  editor.value = data.content;
+  tabsContainer
+    .querySelector(`.tab[data-id="${tabId}"]`)
+    .classList.add('active');
+}
+
+/** Met à jour le titre de l’onglet (astérisque si modifié) */
 function updateTabTitle(tabId) {
   const data = tabData[tabId];
   const tab  = tabsContainer.querySelector(`.tab[data-id="${tabId}"]`);
@@ -84,37 +76,36 @@ function updateTabTitle(tabId) {
   tab.classList.toggle('modified', data.isModified);
 }
 
-/** Ferme un onglet et, s’il n’en reste plus, ferme l’app */
+/** Ferme un onglet */
 function closeTab(tabId) {
-    // Liste les onglets visibles (hors "+")
-    const allTabs = Array.from(tabsContainer.querySelectorAll('.tab'))
-                         .filter(t => t.id !== 'new-tab');
-    const idx       = allTabs.findIndex(t => t.dataset.id === tabId);
-    const wasActive = (tabId === currentTabId);
-  
-    let nextTabId = null;
-    if (wasActive) {
-      // Essaie le suivant, sinon le précédent
-      if (allTabs[idx + 1])      nextTabId = allTabs[idx + 1].dataset.id;
-      else if (allTabs[idx - 1]) nextTabId = allTabs[idx - 1].dataset.id;
-  
-      if (nextTabId) {
-        // Switch **avant** suppression
-        switchTab(nextTabId);
-      } else {
-        // Pas de suivant → on quitte
-        ipcRenderer.send('close-app');
-        return;
-      }
-    }
-  
-    // Ensuite on supprime l’onglet fermé
-    const tabElem = tabsContainer.querySelector(`.tab[data-id="${tabId}"]`);
-    if (tabElem) tabElem.remove();
-    delete tabData[tabId];
-  }  
+  const allTabs = Array.from(tabsContainer.querySelectorAll('.tab'))
+                        .filter(tab => tab.id !== 'new-tab');
+  const idx = allTabs.findIndex(tab => tab.dataset.id === tabId);
+  const wasActive = (tabId === currentTabId);
 
-// Détecte les modifs dans l’éditeur
+  let nextTabId = null;
+  if (wasActive) {
+    if (allTabs[idx + 1]) {
+      nextTabId = allTabs[idx + 1].dataset.id;
+    } else if (allTabs[idx - 1]) {
+      nextTabId = allTabs[idx - 1].dataset.id;
+    }
+  }
+
+  const tabElem = tabsContainer.querySelector(`.tab[data-id="${tabId}"]`);
+  if (tabElem) tabElem.remove();
+  delete tabData[tabId];
+
+  if (wasActive) {
+    if (nextTabId) {
+      switchTab(nextTabId);
+    } else {
+      ipcRenderer.send('close-app');
+    }
+  }
+}
+
+// Écouteur de modifications
 editor.addEventListener('input', () => {
   if (!currentTabId) return;
   const data = tabData[currentTabId];
@@ -135,7 +126,7 @@ saveAsButton.addEventListener('click',  () => {
   ipcRenderer.send('save-as', tabData[currentTabId].content);
 });
 
-// À la réception d'un fichier (ou d’un nouveau)
+// Réception fichier ouvert
 ipcRenderer.on('file-opened', (e, content, filePath) => {
   const title = filePath
     ? path.basename(filePath)
@@ -143,7 +134,7 @@ ipcRenderer.on('file-opened', (e, content, filePath) => {
   createTab(title, content, filePath);
 });
 
-// À la réception d’un enregistrement
+// Réception fichier sauvegardé
 ipcRenderer.on('file-saved', (e, savedPath) => {
   if (!currentTabId) return;
   const data = tabData[currentTabId];
