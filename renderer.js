@@ -18,10 +18,17 @@ const cancelModalBtn = document.getElementById("cancel-modal");
 
 let pendingCloseTabId = null;
 
+// Utility pour informer le main process de l’état unsaved
+function updateUnsavedFlag() {
+  const anyUnsaved = tabs.some(t => t.modified);
+  ipcRenderer.send('has-unsaved', anyUnsaved);
+}
+
 // Initialisation
 window.addEventListener("DOMContentLoaded", () => {
   setTimeout(() => {
     if (tabs.length === 0) createTab();
+    updateUnsavedFlag();
   }, 100);
 });
 
@@ -29,15 +36,7 @@ window.addEventListener("DOMContentLoaded", () => {
 function createTab(filePath = null, content = "") {
   const id = Date.now();
   const name = filePath ? filePath.split(/[/\\]/).pop() : "Nouveau fichier";
-
-  const tab = {
-    id,
-    name,
-    filePath,
-    content,
-    modified: false,
-  };
-
+  const tab = { id, name, filePath, content, modified: false };
   tabs.push(tab);
   currentTabId = id;
   renderTabs();
@@ -56,16 +55,15 @@ function renderTabs() {
   tabsContainer.innerHTML = "";
 
   tabs.forEach((tab) => {
-    const tabElement = document.createElement("div");
-    tabElement.className =
-      "tab" +
-      (tab.id === currentTabId ? " active" : "") +
-      (tab.modified ? " modified" : "");
+    const tabEl = document.createElement("div");
+    tabEl.className = "tab"
+      + (tab.id === currentTabId ? " active" : "")
+      + (tab.modified ? " modified" : "");
 
     const label = document.createElement("span");
     label.className = "tab-label";
     label.textContent = tab.name;
-    tabElement.appendChild(label);
+    tabEl.appendChild(label);
 
     const closeBtn = document.createElement("span");
     closeBtn.className = "close-btn";
@@ -74,15 +72,15 @@ function renderTabs() {
       e.stopPropagation();
       requestTabClose(tab.id);
     };
-    tabElement.appendChild(closeBtn);
+    tabEl.appendChild(closeBtn);
 
-    tabElement.onclick = () => {
+    tabEl.onclick = () => {
       currentTabId = tab.id;
       loadTabContent(tab);
       renderTabs();
     };
 
-    tabsContainer.appendChild(tabElement);
+    tabsContainer.appendChild(tabEl);
   });
 
   // Onglet "+"
@@ -91,17 +89,17 @@ function renderTabs() {
   plusTab.id = "new-tab";
   plusTab.textContent = "+";
   plusTab.onclick = () => createTab();
-
   tabsContainer.appendChild(plusTab);
 }
 
 // Détection de modifications
 editor.addEventListener("input", () => {
-  const tab = tabs.find((t) => t.id === currentTabId);
+  const tab = tabs.find(t => t.id === currentTabId);
   if (tab) {
     tab.content = editor.value;
     tab.modified = true;
     renderTabs();
+    updateUnsavedFlag();
   }
 });
 
@@ -112,12 +110,10 @@ openBtn.addEventListener("click", () => {
 
 // Sauvegarder
 saveBtn.addEventListener("click", () => {
-  const tab = tabs.find((t) => t.id === currentTabId);
+  const tab = tabs.find(t => t.id === currentTabId);
   if (tab) {
     if (tab.filePath) {
       ipcRenderer.send("save-file", tab.filePath, tab.content);
-      tab.modified = false;
-      renderTabs();
     } else {
       ipcRenderer.send("save-file-as", tab.content);
     }
@@ -126,7 +122,7 @@ saveBtn.addEventListener("click", () => {
 
 // Enregistrer sous
 saveAsBtn.addEventListener("click", () => {
-  const tab = tabs.find((t) => t.id === currentTabId);
+  const tab = tabs.find(t => t.id === currentTabId);
   if (tab) {
     ipcRenderer.send("save-file-as", tab.content);
   }
@@ -135,22 +131,24 @@ saveAsBtn.addEventListener("click", () => {
 // Réception d’un fichier ouvert
 ipcRenderer.on("file-opened", (event, content, filePath) => {
   createTab(filePath, content);
+  updateUnsavedFlag();
 });
 
 // Réception d’un fichier sauvegardé
 ipcRenderer.on("file-saved", (event, filePath) => {
-  const tab = tabs.find((t) => t.id === currentTabId);
+  const tab = tabs.find(t => t.id === currentTabId);
   if (tab) {
     tab.filePath = filePath;
     tab.name = filePath.split(/[/\\]/).pop();
     tab.modified = false;
     renderTabs();
+    updateUnsavedFlag();
   }
 });
 
 // Demande de fermeture d’onglet
 function requestTabClose(tabId) {
-  const tab = tabs.find((t) => t.id === tabId);
+  const tab = tabs.find(t => t.id === tabId);
   if (tab.modified) {
     pendingCloseTabId = tabId;
     modal.classList.add("show");
@@ -161,18 +159,17 @@ function requestTabClose(tabId) {
 
 // Modale : Enregistrer
 saveModalBtn.addEventListener("click", () => {
-  const tab = tabs.find((t) => t.id === pendingCloseTabId);
+  const tab = tabs.find(t => t.id === pendingCloseTabId);
   if (tab.filePath) {
     ipcRenderer.send("save-file", tab.filePath, tab.content);
-    closeTab(pendingCloseTabId);
-    modal.classList.remove("show");
   } else {
     ipcRenderer.send("save-file-as", tab.content);
-    ipcRenderer.once("file-saved", () => {
-      closeTab(pendingCloseTabId);
-      modal.classList.remove("show");
-    });
   }
+  // on attend le 'file-saved' pour fermer l'onglet
+  ipcRenderer.once("file-saved", () => {
+    closeTab(pendingCloseTabId);
+    modal.classList.remove("show");
+  });
 });
 
 // Modale : Quitter sans enregistrer
@@ -187,19 +184,18 @@ cancelModalBtn.addEventListener("click", () => {
   modal.classList.remove("show");
 });
 
-// Ferme un onglet et, s'il n'en reste plus, ferme l'app
+// Ferme un onglet, rafraîchit et peut fermer l'app
 function closeTab(tabId) {
-  const index = tabs.findIndex((t) => t.id === tabId);
-  if (index !== -1) {
-    tabs.splice(index, 1);
+  const idx = tabs.findIndex(t => t.id === tabId);
+  if (idx !== -1) {
+    tabs.splice(idx, 1);
     if (tabId === currentTabId) {
-      const next = tabs[index] || tabs[index - 1];
+      const next = tabs[idx] || tabs[idx - 1];
       currentTabId = next ? next.id : null;
-      if (next) loadTabContent(next);
-      else editor.value = "";
+      next ? loadTabContent(next) : (editor.value = "");
     }
     renderTabs();
-
+    updateUnsavedFlag();
     if (tabs.length === 0) {
       ipcRenderer.send("close-all-tabs");
     }
@@ -209,26 +205,20 @@ function closeTab(tabId) {
 // Sauvegarde globale avant fermeture de l'app
 ipcRenderer.on("app-close-save", () => {
   function saveNext() {
-    const tab = tabs.find((t) => t.modified);
+    const tab = tabs.find(t => t.modified);
     if (!tab) {
       ipcRenderer.send("app-close-saved");
       return;
     }
     if (tab.filePath) {
       ipcRenderer.send("save-file", tab.filePath, tab.content);
-      ipcRenderer.once("file-saved", () => {
-        tab.modified = false;
-        saveNext();
-      });
     } else {
       ipcRenderer.send("save-file-as", tab.content);
-      ipcRenderer.once("file-saved", (event, filePath) => {
-        tab.filePath = filePath;
-        tab.name = filePath.split(/[/\\]/).pop();
-        tab.modified = false;
-        saveNext();
-      });
     }
+    ipcRenderer.once("file-saved", () => {
+      tab.modified = false;
+      saveNext();
+    });
   }
   saveNext();
 });

@@ -5,6 +5,8 @@ const path = require('path');
 const { URL } = require('url');
 
 let mainWindow;
+// flag suivi depuis le renderer
+let hasUnsaved = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -12,26 +14,23 @@ function createWindow() {
     height: 800,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false,
+      contextIsolation: false, 
     },
   });
 
   mainWindow.loadFile('index.html');
 
-  // === Interception de la fermeture de la fenêtre principale ===
   mainWindow.on('close', async (e) => {
-    // On récupère la page (basename du file:// URL)
     const currentURL = mainWindow.webContents.getURL();
     const page = path.basename(new URL(currentURL).pathname);
 
-    // Si on est sur la page d'accueil, on ferme sans rien bloquer
-    if (page === 'index.html') {
+    // si on est sur la page d'accueil, ou rien à sauvegarder, on laisse fermer
+    if (page === 'index.html' || !hasUnsaved) {
       return;
     }
 
-    // Sinon, on empêche la fermeture et on propose le choix à l'utilisateur
+    // sinon, on intercepte et on demande à l'utilisateur
     e.preventDefault();
-
     const { response } = await dialog.showMessageBox(mainWindow, {
       type: 'warning',
       buttons: ['Enregistrer', 'Quitter sans enregistrer', 'Annuler'],
@@ -41,14 +40,12 @@ function createWindow() {
     });
 
     if (response === 0) {
-      // Enregistrer : on demande au renderer de tout sauvegarder
       mainWindow.webContents.send('app-close-save');
     } else if (response === 1) {
-      // Quitter sans enregistrer : on retire le listener et on ferme
       mainWindow.removeAllListeners('close');
       mainWindow.close();
     }
-    // response === 2 -> Annuler : on ne fait rien (on reste dans l'app)
+    // si Annuler, on ne fait rien
   });
 }
 
@@ -57,12 +54,16 @@ app.whenReady().then(createWindow);
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// === IPC: OUVERTURE DE FICHIER ===
+// on met à jour le flag from renderer
+ipcMain.on('has-unsaved', (event, flag) => {
+  hasUnsaved = flag;
+});
+
+// === OUVERTURE / SAUVEGARDE / NOUVEAU FICHIER ===
 ipcMain.on('open-file', async (event) => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: 'Ouvrir un fichier',
@@ -73,8 +74,8 @@ ipcMain.on('open-file', async (event) => {
     const filePath = filePaths[0];
     fs.readFile(filePath, 'utf8', async (err, data) => {
       if (!err) {
-        const currentPage = path.basename(new URL(mainWindow.webContents.getURL()).pathname);
-        if (currentPage !== 'editor.html') {
+        const page = path.basename(new URL(mainWindow.webContents.getURL()).pathname);
+        if (page !== 'editor.html') {
           await mainWindow.loadFile('editor.html');
         }
         mainWindow.webContents.send('file-opened', data, filePath);
@@ -82,15 +83,11 @@ ipcMain.on('open-file', async (event) => {
     });
   }
 });
-
-// === IPC: SAUVEGARDE SIMPLE ===
 ipcMain.on('save-file', (event, filePath, content) => {
-  fs.writeFile(filePath, content, 'utf8', (err) => {
-    if (!err) event.sender.send('file-saved', filePath);
+  fs.writeFile(filePath, content, 'utf8', () => {
+    event.sender.send('file-saved', filePath);
   });
 });
-
-// === IPC: SAUVEGARDE "Enregistrer sous..." ===
 ipcMain.on('save-file-as', async (event, content) => {
   const { canceled, filePath } = await dialog.showSaveDialog({
     title: 'Enregistrer sous...',
@@ -98,25 +95,23 @@ ipcMain.on('save-file-as', async (event, content) => {
     filters: [{ name: 'Textes', extensions: ['txt','md','js','json','html','css'] }]
   });
   if (!canceled && filePath) {
-    fs.writeFile(filePath, content, 'utf8', (err) => {
-      if (!err) event.sender.send('file-saved', filePath);
+    fs.writeFile(filePath, content, 'utf8', () => {
+      event.sender.send('file-saved', filePath);
     });
   }
 });
-
-// === IPC: NOUVEAU FICHIER ===
 ipcMain.on('new-file', () => {
   mainWindow.loadFile('editor.html');
 });
 
-// === IPC: FERMETURE APRÈS SAUVEGARDE GLOBALE ===
+// après une sauvegarde globale, on ferme
 ipcMain.on('app-close-saved', () => {
   if (!mainWindow) return;
   mainWindow.removeAllListeners('close');
   mainWindow.close();
 });
 
-// === IPC: FERMETURE QUAND TOUS LES ONGLET SONT FERMÉS ===
+// fermeture quand tous les onglets sont fermés
 ipcMain.on('close-all-tabs', () => {
   if (!mainWindow) return;
   mainWindow.removeAllListeners('close');
