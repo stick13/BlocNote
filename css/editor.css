@@ -1,174 +1,187 @@
+/* css/editor.css */
+
 /* Réinitialisation et global */
 * {
-    box-sizing: border-box;
-  }
-  body {
-    margin: 0;
-    font-family: 'Roboto', sans-serif;
-    background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
-    color: #333;
-  }
-  
-  #container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  
-  /* Header (onglets + boutons) */
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #fff;
-    padding: 10px 15px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  }
-  
-  .tabs {
-    display: flex;
-    overflow-x: auto;
-    padding-right: 10px;
-    background: #fff;
-  }
-  
-  /* Chaque onglet */
-  .tab {
-    display: flex;
-    align-items: center;
-    background: #e0e0e0;
-    padding: 8px 12px;
-    margin-right: 5px;
-    border-radius: 4px 4px 0 0;
-    position: relative;
-    cursor: pointer;
-    transition: background 0.3s;
-  }
-  
-  /* Label à l'intérieur de l'onglet */
-  .tab-label {
-    flex: 1;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  
-  /* Onglet actif */
-  .tab.active {
-    background: #fff;
-    font-weight: 500;
-    box-shadow: inset 0 -2px 0 #1976d2;
-  }
-  
-  /* Étoile de modification */
-  .tab.modified::before {
-    content: '✱ ';
-    color: #d32f2f;
-    font-weight: bold;
-  }
-  
-  /* Bouton + */
-  .tab.plus {
-    background: #bdbdbd;
-    font-weight: bold;
-  }
-  .tab.plus:hover {
-    background: #a5a5a5;
-  }
-  
-  /* Croix de fermeture */
-  .tab .close-btn {
-    margin-left: 8px;
-    font-size: 14px;
-    color: #555;
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-  .tab:hover .close-btn {
-    opacity: 1;
-  }
-  .tab .close-btn:hover {
-    color: #d32f2f;
-  }
-  
-  /* Boutons de navigation */
-  .nav-buttons {
-    display: flex;
-    gap: 10px;
-  }
-  .nav-buttons button {
-    background: #1976d2;
-    border: none;
-    color: white;
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 16px;
-    cursor: pointer;
-    transition: background 0.3s;
-  }
-  .nav-buttons button:hover {
-    background: #1565c0;
-  }
-  
-  /* Zone éditeur */
-  main {
-    flex: 1;
-    padding: 15px;
-    background: #fafafa;
-  }
-  #editor {
-    width: 100%;
-    height: 100%;
-    resize: none;
-    border: none;
-    outline: none;
-    font-size: 16px;
-    padding: 10px;
-    background: #fff;
-    border-radius: 4px;
-    box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
-    font-family: 'Roboto', sans-serif;
-  }
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-  /* Styles pour la modale */
+/* Gestion de l'affichage de la modale */
 .modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
   display: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
-
-.modal-content {
-  background: #fff;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  text-align: center;
+.modal.show {
+  display: flex;
 }
 
+body {
+  font-family: 'Roboto', sans-serif;
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+#container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Header (onglets + boutons) */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Onglets */
+.tabs {
+  display: flex;
+  overflow-x: auto;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  background: #e0e0e0;
+  padding: 0.5rem 0.75rem;
+  margin-right: 0.5rem;
+  border-radius: 0.375rem 0.375rem 0 0;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.tab:hover {
+  background: #d5d5d5;
+}
+.tab.active {
+  background: #fff;
+  font-weight: 500;
+  box-shadow: inset 0 -2px 0 #6200ee;
+}
+.tab.modified::before {
+  content: '✱ ';
+  color: #d32f2f;
+  font-weight: bold;
+}
+.tab.plus {
+  background: #bdbdbd;
+  font-weight: bold;
+}
+.tab.plus:hover {
+  background: #a5a5a5;
+}
+.tab-label {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.close-btn {
+  margin-left: 0.5rem;
+  font-size: 0.875rem;
+  color: #555;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.tab:hover .close-btn {
+  opacity: 1;
+}
+.close-btn:hover {
+  color: #d32f2f;
+}
+
+/* Boutons de la barre d’outils */
+.nav-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+.nav-buttons button {
+  background: linear-gradient(135deg, #6200ee, #3700b3);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.nav-buttons button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+}
+.nav-buttons button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Zone éditeur */
+main {
+  flex: 1;
+  padding: 1rem;
+  background: #fafafa;
+}
+#editor {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  font-size: 1rem;
+  padding: 0.75rem;
+  background: #fff;
+  border-radius: 0.375rem;
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+}
+
+/* Boutons de la modale de confirmation */
+.modal-content {
+  background: #fff;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  text-align: center;
+}
 .modal-buttons {
   display: flex;
   justify-content: space-around;
-  margin-top: 15px;
+  margin-top: 1rem;
 }
-
 .modal-buttons button {
-  padding: 10px 20px;
-  font-size: 16px;
-  cursor: pointer;
-  border-radius: 4px;
+  padding: 0.6rem 1rem;
+  font-size: 1rem;
   border: none;
-  transition: background-color 0.3s;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-
-.modal-buttons button:hover {
-  background-color: #1976d2;
+.modal-buttons button#save-modal {
+  background: linear-gradient(135deg, #2e7d32, #1b5e20);
   color: #fff;
 }
-  
+.modal-buttons button#quit-without-saving {
+  background: linear-gradient(135deg, #c62828, #8e0000);
+  color: #fff;
+}
+.modal-buttons button#cancel-modal {
+  background: linear-gradient(135deg, #616161, #424242);
+  color: #fff;
+}
+.modal-buttons button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+}
+.modal-buttons button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}

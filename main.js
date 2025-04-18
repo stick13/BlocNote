@@ -2,6 +2,7 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { URL } = require('url');
 
 let mainWindow;
 
@@ -17,8 +18,18 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // === Prévention de la fermeture de l'app (croix de fenêtre) ===
+  // === Interception de la fermeture de la fenêtre principale ===
   mainWindow.on('close', async (e) => {
+    // On récupère la page (basename du file:// URL)
+    const currentURL = mainWindow.webContents.getURL();
+    const page = path.basename(new URL(currentURL).pathname);
+
+    // Si on est sur la page d'accueil, on ferme sans rien bloquer
+    if (page === 'index.html') {
+      return;
+    }
+
+    // Sinon, on empêche la fermeture et on propose le choix à l'utilisateur
     e.preventDefault();
 
     const { response } = await dialog.showMessageBox(mainWindow, {
@@ -26,18 +37,18 @@ function createWindow() {
       buttons: ['Enregistrer', 'Quitter sans enregistrer', 'Annuler'],
       defaultId: 0,
       cancelId: 2,
-      message: 'Vous avez peut-être des fichiers non enregistrés. Que souhaitez‑vous faire ?',
+      message: 'Vous avez peut‑être des fichiers non enregistrés. Que souhaitez‑vous faire ?',
     });
 
     if (response === 0) {
       // Enregistrer : on demande au renderer de tout sauvegarder
       mainWindow.webContents.send('app-close-save');
     } else if (response === 1) {
-      // Quitter sans enregistrer : on force la fermeture
+      // Quitter sans enregistrer : on retire le listener et on ferme
       mainWindow.removeAllListeners('close');
       mainWindow.close();
     }
-    // response === 2 (Annuler) → rien
+    // response === 2 -> Annuler : on ne fait rien (on reste dans l'app)
   });
 }
 
@@ -62,8 +73,8 @@ ipcMain.on('open-file', async (event) => {
     const filePath = filePaths[0];
     fs.readFile(filePath, 'utf8', async (err, data) => {
       if (!err) {
-        const url = mainWindow.webContents.getURL();
-        if (!url.endsWith('editor.html')) {
+        const currentPage = path.basename(new URL(mainWindow.webContents.getURL()).pathname);
+        if (currentPage !== 'editor.html') {
           await mainWindow.loadFile('editor.html');
         }
         mainWindow.webContents.send('file-opened', data, filePath);
@@ -98,17 +109,16 @@ ipcMain.on('new-file', () => {
   mainWindow.loadFile('editor.html');
 });
 
-// === IPC: FERMETURE APRÈS SAVING GLOBAL ===
+// === IPC: FERMETURE APRÈS SAUVEGARDE GLOBALE ===
 ipcMain.on('app-close-saved', () => {
   if (!mainWindow) return;
   mainWindow.removeAllListeners('close');
   mainWindow.close();
 });
 
-// === IPC: FERMETURE QUAND TOUS LES ONGLETS SONT FERMÉS ===
+// === IPC: FERMETURE QUAND TOUS LES ONGLET SONT FERMÉS ===
 ipcMain.on('close-all-tabs', () => {
   if (!mainWindow) return;
-  // On retire l'intercepteur pour ne pas bloquer la fermeture
   mainWindow.removeAllListeners('close');
   mainWindow.close();
 });

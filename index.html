@@ -1,15 +1,23 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bloc-Notes - Accueil</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bloc-Notes Electron</title>
+  <!-- Police commune -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+  <!-- CSS spécifique à l'index -->
+  <link rel="stylesheet" href="css/index.css"/>
 </head>
 <body>
-    <h1>Bienvenue dans le Bloc-Notes Electron</h1>
-    <button id="openFile">📂 Ouvrir un fichier</button>
-    <button id="newFile">📝 Nouveau fichier</button>
-
-    <script src="home.js"></script>
+  <div id="home-container">
+    <h1>Bienvenue dans Modern Bloc-Notes</h1>
+    <div class="buttons">
+      <button id="openFile" class="btn">📂 Ouvrir un fichier</button>
+      <button id="newFile" class="btn">📝 Nouveau fichier</button>
+    </div>
+  </div>
+  <script src="home.js"></script>
 </body>
 </html>
