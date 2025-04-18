@@ -1,13 +1,13 @@
-// Importation des modules Electron et Node.js nécessaires
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-let mainWindow = null;       // Fenêtre principale (Accueil)
-let editorWindow = null;     // Fenêtre d'édition
-let currentFilePath = null;  // Stocke le chemin du fichier actuellement ouvert
+// Variables globales
+let mainWindow = null;
+let editorWindow = null;
+let currentFilePath = null;
 
-// 🔹 Fonction pour créer la fenêtre principale (Accueil)
+// Fonction pour créer la fenêtre principale
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 600,
@@ -25,7 +25,7 @@ function createMainWindow() {
   });
 }
 
-// 🔹 Fonction pour créer la fenêtre de l'éditeur
+// Fonction pour créer la fenêtre d'édition
 function createEditorWindow(filePath = null, content = "") {
   editorWindow = new BrowserWindow({
     width: 800,
@@ -38,7 +38,6 @@ function createEditorWindow(filePath = null, content = "") {
 
   editorWindow.loadFile('editor.html');
 
-  // Une fois le chargement terminé, envoyer le contenu au renderer
   editorWindow.webContents.once('did-finish-load', () => {
     editorWindow.webContents.send('file-opened', content, filePath);
   });
@@ -47,60 +46,56 @@ function createEditorWindow(filePath = null, content = "") {
     editorWindow = null;
   });
 
-  // Fermer la fenêtre principale après création de l'éditeur (si elle existe)
   if (mainWindow) {
     mainWindow.close();
     mainWindow = null;
   }
 }
 
-// 📂 Gestion de l'ouverture d'un fichier
+// Gestionnaires IPC
 ipcMain.on('open-file', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
     filters: [{ name: 'Text Files', extensions: ['txt'] }]
   });
 
-  if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+  if (!result.canceled && result.filePaths?.length > 0) {
     currentFilePath = result.filePaths[0];
     const fileContent = fs.readFileSync(currentFilePath, 'utf8');
 
     if (editorWindow) {
-      // Si l'éditeur est déjà ouvert, envoyer le contenu du fichier
       editorWindow.webContents.send('file-opened', fileContent, currentFilePath);
     } else {
-      // Sinon, créer l'éditeur avec le fichier ouvert
       createEditorWindow(currentFilePath, fileContent);
     }
   }
 });
 
-// 📝 Gestion de la création d'un nouveau fichier
 ipcMain.on('new-file', () => {
   createEditorWindow(null, "");
 });
 
-// 💾 Gestion de la sauvegarde simple des fichiers
 ipcMain.handle('save-file', async (event, content) => {
   if (currentFilePath) {
-    // Fichier existant : on écrit directement
     fs.writeFileSync(currentFilePath, content, 'utf8');
     event.sender.send('file-saved', currentFilePath);
+    return { success: true, path: currentFilePath };
   } else {
-    // Pour un nouveau fichier, déclencher "Enregistrer sous..."
     const win = editorWindow || BrowserWindow.getFocusedWindow();
     const result = await dialog.showSaveDialog(win, {
       filters: [{ name: 'Text Files', extensions: ['txt'] }]
     });
+    
     if (!result.canceled && result.filePath) {
       currentFilePath = result.filePath;
       fs.writeFileSync(currentFilePath, content, 'utf8');
       event.sender.send('file-saved', currentFilePath);
+      return { success: true, path: currentFilePath };
     }
+    return { success: false };
   }
 });
 
-// 💾 Gestion d'"Enregistrer sous..."
 ipcMain.on('save-as', async (event, content) => {
   const win = editorWindow || BrowserWindow.getFocusedWindow();
   const result = await dialog.showSaveDialog(win, {
@@ -108,6 +103,7 @@ ipcMain.on('save-as', async (event, content) => {
     defaultPath: 'nouveau_fichier.txt',
     filters: [{ name: 'Text Files', extensions: ['txt'] }]
   });
+
   if (!result.canceled && result.filePath) {
     fs.writeFileSync(result.filePath, content, 'utf8');
     currentFilePath = result.filePath;
@@ -115,30 +111,62 @@ ipcMain.on('save-as', async (event, content) => {
   }
 });
 
-// 📌 Réception du message pour fermer l'application (par exemple, quand le dernier onglet se ferme)
+ipcMain.handle('show-close-confirmation', async (event, fileTitle) => {
+  const result = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['Enregistrer', 'Quitter sans enregistrer', 'Annuler'],
+    defaultId: 0,
+    cancelId: 2,
+    title: 'Fermer l\'onglet',
+    message: `Souhaitez-vous enregistrer les modifications dans "${fileTitle}" avant de fermer ?`
+  });
+  return result.response;
+});
+
+ipcMain.handle('show-save-dialog', async () => {
+  const result = await dialog.showSaveDialog({
+    title: 'Enregistrer sous...',
+    defaultPath: 'nouveau_fichier.txt',
+    filters: [{ name: 'Text Files', extensions: ['txt'] }]
+  });
+  return result.canceled ? null : result.filePath;
+});
+
+ipcMain.handle('save-direct', async (event, filePath, content) => {
+  fs.writeFileSync(filePath, content, 'utf8');
+  event.sender.send('file-saved', filePath);
+});
+
 ipcMain.on('close-app', () => {
-  console.log("close-app reçu, fermeture de l'application.");
+  if (editorWindow) editorWindow.close();
+  if (mainWindow) mainWindow.close();
   app.quit();
 });
 
-// (Optionnel) Autre canal pour quitter explicitement
-ipcMain.on('quit-app', (event, shouldQuit) => {
-  if (shouldQuit) app.quit();
+ipcMain.on('force-close', () => {
+  app.exit(0);
 });
 
-// ⚡ Lancer l'application lorsque Electron est prêt
-app.whenReady().then(createMainWindow);
-
-// Quitter l'application lorsque toutes les fenêtres sont fermées (sauf sur macOS)
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
+ipcMain.on("no-tabs-left", () => {
+  const windows = BrowserWindow.getAllWindows();
+  if (windows.length > 0) {
+    windows[0].close();
   }
 });
 
-// Sur macOS, recréer une fenêtre si l'app est activée et qu'aucune fenêtre n'est ouverte
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createMainWindow();
+// Configuration de l'application
+app.whenReady().then(() => {
+  createMainWindow();
+  
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createMainWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
   }
 });
