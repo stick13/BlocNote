@@ -1,172 +1,114 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
-const path = require('path');
+// main.js
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const fs = require('fs');
+const path = require('path');
 
-// Variables globales
-let mainWindow = null;
-let editorWindow = null;
-let currentFilePath = null;
+let mainWindow;
 
-// Fonction pour créer la fenêtre principale
-function createMainWindow() {
+function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 600,
-    height: 400,
+    width: 1000,
+    height: 800,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
-    }
+      contextIsolation: false,
+    },
   });
 
   mainWindow.loadFile('index.html');
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-}
+  // === Prévention de la fermeture de l'app (croix de fenêtre) ===
+  mainWindow.on('close', async (e) => {
+    e.preventDefault();
 
-// Fonction pour créer la fenêtre d'édition
-function createEditorWindow(filePath = null, content = "") {
-  editorWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    }
-  });
-
-  editorWindow.loadFile('editor.html');
-
-  editorWindow.webContents.once('did-finish-load', () => {
-    editorWindow.webContents.send('file-opened', content, filePath);
-  });
-
-  editorWindow.on('closed', () => {
-    editorWindow = null;
-  });
-
-  if (mainWindow) {
-    mainWindow.close();
-    mainWindow = null;
-  }
-}
-
-// Gestionnaires IPC
-ipcMain.on('open-file', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [{ name: 'Text Files', extensions: ['txt'] }]
-  });
-
-  if (!result.canceled && result.filePaths?.length > 0) {
-    currentFilePath = result.filePaths[0];
-    const fileContent = fs.readFileSync(currentFilePath, 'utf8');
-
-    if (editorWindow) {
-      editorWindow.webContents.send('file-opened', fileContent, currentFilePath);
-    } else {
-      createEditorWindow(currentFilePath, fileContent);
-    }
-  }
-});
-
-ipcMain.on('new-file', () => {
-  createEditorWindow(null, "");
-});
-
-ipcMain.handle('save-file', async (event, content) => {
-  if (currentFilePath) {
-    fs.writeFileSync(currentFilePath, content, 'utf8');
-    event.sender.send('file-saved', currentFilePath);
-    return { success: true, path: currentFilePath };
-  } else {
-    const win = editorWindow || BrowserWindow.getFocusedWindow();
-    const result = await dialog.showSaveDialog(win, {
-      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['Enregistrer', 'Quitter sans enregistrer', 'Annuler'],
+      defaultId: 0,
+      cancelId: 2,
+      message: 'Vous avez peut-être des fichiers non enregistrés. Que souhaitez‑vous faire ?',
     });
-    
-    if (!result.canceled && result.filePath) {
-      currentFilePath = result.filePath;
-      fs.writeFileSync(currentFilePath, content, 'utf8');
-      event.sender.send('file-saved', currentFilePath);
-      return { success: true, path: currentFilePath };
+
+    if (response === 0) {
+      // Enregistrer : on demande au renderer de tout sauvegarder
+      mainWindow.webContents.send('app-close-save');
+    } else if (response === 1) {
+      // Quitter sans enregistrer : on force la fermeture
+      mainWindow.removeAllListeners('close');
+      mainWindow.close();
     }
-    return { success: false };
-  }
-});
-
-ipcMain.on('save-as', async (event, content) => {
-  const win = editorWindow || BrowserWindow.getFocusedWindow();
-  const result = await dialog.showSaveDialog(win, {
-    title: 'Enregistrer sous...',
-    defaultPath: 'nouveau_fichier.txt',
-    filters: [{ name: 'Text Files', extensions: ['txt'] }]
+    // response === 2 (Annuler) → rien
   });
+}
 
-  if (!result.canceled && result.filePath) {
-    fs.writeFileSync(result.filePath, content, 'utf8');
-    currentFilePath = result.filePath;
-    event.sender.send('file-saved', result.filePath);
-  }
-});
-
-ipcMain.handle('show-close-confirmation', async (event, fileTitle) => {
-  const result = await dialog.showMessageBox({
-    type: 'question',
-    buttons: ['Enregistrer', 'Quitter sans enregistrer', 'Annuler'],
-    defaultId: 0,
-    cancelId: 2,
-    title: 'Fermer l\'onglet',
-    message: `Souhaitez-vous enregistrer les modifications dans "${fileTitle}" avant de fermer ?`
-  });
-  return result.response;
-});
-
-ipcMain.handle('show-save-dialog', async () => {
-  const result = await dialog.showSaveDialog({
-    title: 'Enregistrer sous...',
-    defaultPath: 'nouveau_fichier.txt',
-    filters: [{ name: 'Text Files', extensions: ['txt'] }]
-  });
-  return result.canceled ? null : result.filePath;
-});
-
-ipcMain.handle('save-direct', async (event, filePath, content) => {
-  fs.writeFileSync(filePath, content, 'utf8');
-  event.sender.send('file-saved', filePath);
-});
-
-ipcMain.on('close-app', () => {
-  if (editorWindow) editorWindow.close();
-  if (mainWindow) mainWindow.close();
-  app.quit();
-});
-
-ipcMain.on('force-close', () => {
-  app.exit(0);
-});
-
-ipcMain.on("no-tabs-left", () => {
-  const windows = BrowserWindow.getAllWindows();
-  if (windows.length > 0) {
-    windows[0].close();
-  }
-});
-
-// Configuration de l'application
-app.whenReady().then(() => {
-  createMainWindow();
-  
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    }
-  });
-});
+app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+// === IPC: OUVERTURE DE FICHIER ===
+ipcMain.on('open-file', async (event) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Ouvrir un fichier',
+    properties: ['openFile'],
+    filters: [{ name: 'Textes', extensions: ['txt','md','js','json','html','css'] }]
+  });
+  if (!canceled && filePaths.length > 0) {
+    const filePath = filePaths[0];
+    fs.readFile(filePath, 'utf8', async (err, data) => {
+      if (!err) {
+        const url = mainWindow.webContents.getURL();
+        if (!url.endsWith('editor.html')) {
+          await mainWindow.loadFile('editor.html');
+        }
+        mainWindow.webContents.send('file-opened', data, filePath);
+      }
+    });
   }
+});
+
+// === IPC: SAUVEGARDE SIMPLE ===
+ipcMain.on('save-file', (event, filePath, content) => {
+  fs.writeFile(filePath, content, 'utf8', (err) => {
+    if (!err) event.sender.send('file-saved', filePath);
+  });
+});
+
+// === IPC: SAUVEGARDE "Enregistrer sous..." ===
+ipcMain.on('save-file-as', async (event, content) => {
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: 'Enregistrer sous...',
+    defaultPath: 'nouveau.txt',
+    filters: [{ name: 'Textes', extensions: ['txt','md','js','json','html','css'] }]
+  });
+  if (!canceled && filePath) {
+    fs.writeFile(filePath, content, 'utf8', (err) => {
+      if (!err) event.sender.send('file-saved', filePath);
+    });
+  }
+});
+
+// === IPC: NOUVEAU FICHIER ===
+ipcMain.on('new-file', () => {
+  mainWindow.loadFile('editor.html');
+});
+
+// === IPC: FERMETURE APRÈS SAVING GLOBAL ===
+ipcMain.on('app-close-saved', () => {
+  if (!mainWindow) return;
+  mainWindow.removeAllListeners('close');
+  mainWindow.close();
+});
+
+// === IPC: FERMETURE QUAND TOUS LES ONGLETS SONT FERMÉS ===
+ipcMain.on('close-all-tabs', () => {
+  if (!mainWindow) return;
+  // On retire l'intercepteur pour ne pas bloquer la fermeture
+  mainWindow.removeAllListeners('close');
+  mainWindow.close();
 });
