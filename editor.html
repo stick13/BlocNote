@@ -12,24 +12,21 @@
   <div id="container">
     <header>
       <div id="tabs" class="tabs">
-        <!-- Onglets seront générés ici -->
-        <div class="tab plus" id="new-tab">+</div>
+        <!-- onglets générés dynamiquement -->
       </div>
       <div class="nav-buttons">
         <button id="openFile" title="Ouvrir un fichier">📂</button>
-        <button id="save" title="Sauvegarder">💾</button>
-        <button id="saveAs" title="Enregistrer sous">💾↓</button>
+        <button id="save"     title="Sauvegarder">💾</button>
+        <button id="saveAs"   title="Enregistrer sous">💾↓</button>
       </div>
     </header>
     <main>
-      <textarea id="editor" placeholder="Commencez à écrire ici..."></textarea>
+      <textarea id="editor" placeholder="Commencez à écrire ici…"></textarea>
     </main>
   </div>
-
-  <!-- Modale de confirmation de fermeture d'onglet -->
   <div id="confirmation-modal" class="modal">
     <div class="modal-content">
-      <p>Ce fichier a été modifié. Que souhaitez-vous faire ?</p>
+      <p>Ce fichier a été modifié. Que souhaitez-vous faire ?</p>
       <div class="modal-buttons">
         <button id="save-modal">Enregistrer</button>
         <button id="quit-without-saving">Quitter sans enregistrer</button>
@@ -37,7 +34,6 @@
       </div>
     </div>
   </div>
-
   <script src="renderer.js"></script>
 </body>
 </html>

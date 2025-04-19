@@ -1,155 +1,158 @@
 // renderer.js
-const { ipcRenderer } = require("electron");
+const { ipcRenderer } = require('electron');
 
 let tabs = [];
 let currentTabId = null;
+let sessionRestored = false;
 
-// DOM Elements
-const editor = document.getElementById("editor");
-const saveBtn = document.getElementById("save");
-const saveAsBtn = document.getElementById("saveAs");
-const openBtn = document.getElementById("openFile");
-
-// Modale de fermeture d’onglet
-const modal = document.getElementById("confirmation-modal");
-const saveModalBtn = document.getElementById("save-modal");
+// Éléments du DOM
+const editor               = document.getElementById("editor");
+const saveBtn              = document.getElementById("save");
+const saveAsBtn            = document.getElementById("saveAs");
+const openBtn              = document.getElementById("openFile");
+const modal                = document.getElementById("confirmation-modal");
+const saveModalBtn         = document.getElementById("save-modal");
 const quitWithoutSavingBtn = document.getElementById("quit-without-saving");
-const cancelModalBtn = document.getElementById("cancel-modal");
+const cancelModalBtn       = document.getElementById("cancel-modal");
 
 let pendingCloseTabId = null;
+let hasUnsaved        = false;
 
-// Utility pour informer le main process de l’état unsaved
+// Informe le main du statut unsaved (pour le prompt de fermeture)
 function updateUnsavedFlag() {
-  const anyUnsaved = tabs.some(t => t.modified);
-  ipcRenderer.send('has-unsaved', anyUnsaved);
+  ipcRenderer.send('has-unsaved', hasUnsaved);
 }
 
-// Initialisation
-window.addEventListener("DOMContentLoaded", () => {
-  setTimeout(() => {
-    if (tabs.length === 0) createTab();
-    updateUnsavedFlag();
-  }, 100);
-});
+// Persistance de la session : on n’enregistre que les onglets
+// qui ont un fichier associé ou qui ont été modifiés
+function updateSession() {
+  const sessionTabs = tabs
+    .filter(t => t.filePath || t.modified)   // ignore les onglets vierges non modifiés
+    .map(t => ({
+      filePath: t.filePath,
+      content:  t.content,
+      modified: t.modified
+    }));
+  ipcRenderer.send('session-save', sessionTabs);
+}
 
-// Crée un nouvel onglet
-function createTab(filePath = null, content = "") {
-  const id = Date.now();
-  const name = filePath ? filePath.split(/[/\\]/).pop() : "Nouveau fichier";
-  const tab = { id, name, filePath, content, modified: false };
+// Création d’un onglet
+function createTab(filePath = null, content = "", restore = false, restoredModified = false) {
+  const id   = Date.now();
+  const name = filePath ? path.basename(filePath) : "Nouveau fichier";
+  const tab  = {
+    id,
+    name,
+    filePath,
+    content,
+    modified: restore ? restoredModified : false
+  };
   tabs.push(tab);
   currentTabId = id;
   renderTabs();
   loadTabContent(tab);
+  if (!restore) updateSession();
 }
 
-// Charge le contenu d’un onglet dans le textarea
+// Charge le contenu dans l’éditeur
 function loadTabContent(tab) {
   editor.value = tab.content || "";
   editor.focus();
 }
 
-// Affiche les onglets
+// Affiche tous les onglets
 function renderTabs() {
-  const tabsContainer = document.getElementById("tabs");
-  tabsContainer.innerHTML = "";
-
-  tabs.forEach((tab) => {
-    const tabEl = document.createElement("div");
-    tabEl.className = "tab"
+  const container = document.getElementById("tabs");
+  container.innerHTML = "";
+  tabs.forEach(tab => {
+    const el = document.createElement("div");
+    el.className = "tab"
       + (tab.id === currentTabId ? " active" : "")
-      + (tab.modified ? " modified" : "");
-
+      + (tab.modified  ? " modified" : "");
     const label = document.createElement("span");
     label.className = "tab-label";
     label.textContent = tab.name;
-    tabEl.appendChild(label);
-
+    el.appendChild(label);
     const closeBtn = document.createElement("span");
     closeBtn.className = "close-btn";
     closeBtn.textContent = "✖";
-    closeBtn.onclick = (e) => {
-      e.stopPropagation();
-      requestTabClose(tab.id);
-    };
-    tabEl.appendChild(closeBtn);
-
-    tabEl.onclick = () => {
+    closeBtn.onclick = e => { e.stopPropagation(); requestTabClose(tab.id); };
+    el.appendChild(closeBtn);
+    el.onclick = () => {
       currentTabId = tab.id;
       loadTabContent(tab);
       renderTabs();
     };
-
-    tabsContainer.appendChild(tabEl);
+    container.appendChild(el);
   });
-
   // Onglet "+"
-  const plusTab = document.createElement("div");
-  plusTab.className = "tab plus";
-  plusTab.id = "new-tab";
-  plusTab.textContent = "+";
-  plusTab.onclick = () => createTab();
-  tabsContainer.appendChild(plusTab);
+  const plus = document.createElement("div");
+  plus.className = "tab plus";
+  plus.textContent = "+";
+  plus.onclick = () => createTab();
+  container.appendChild(plus);
 }
 
-// Détection de modifications
+// Détecte la modification de l’éditeur
 editor.addEventListener("input", () => {
   const tab = tabs.find(t => t.id === currentTabId);
-  if (tab) {
-    tab.content = editor.value;
-    tab.modified = true;
-    renderTabs();
-    updateUnsavedFlag();
-  }
+  if (!tab) return;
+  tab.content  = editor.value;
+  tab.modified = true;
+  hasUnsaved   = true;
+  renderTabs();
+  updateUnsavedFlag();
+  updateSession();
 });
 
-// Ouvrir un fichier
-openBtn.addEventListener("click", () => {
-  ipcRenderer.send("open-file");
-});
-
-// Sauvegarder
+// Gestion des boutons
+openBtn.addEventListener("click", () => ipcRenderer.send("open-file"));
 saveBtn.addEventListener("click", () => {
   const tab = tabs.find(t => t.id === currentTabId);
-  if (tab) {
-    if (tab.filePath) {
-      ipcRenderer.send("save-file", tab.filePath, tab.content);
-    } else {
-      ipcRenderer.send("save-file-as", tab.content);
-    }
-  }
+  if (!tab) return;
+  if (tab.filePath) ipcRenderer.send("save-file", tab.filePath, tab.content);
+  else               ipcRenderer.send("save-file-as", tab.content);
 });
-
-// Enregistrer sous
 saveAsBtn.addEventListener("click", () => {
   const tab = tabs.find(t => t.id === currentTabId);
-  if (tab) {
-    ipcRenderer.send("save-file-as", tab.content);
-  }
+  if (tab) ipcRenderer.send("save-file-as", tab.content);
 });
 
-// Réception d’un fichier ouvert
-ipcRenderer.on("file-opened", (event, content, filePath) => {
-  createTab(filePath, content);
+// Réception des données de session au démarrage
+ipcRenderer.on("session-data", (_, sessionTabs) => {
+  sessionRestored = true;
+  sessionTabs.forEach(t =>
+    createTab(t.filePath, t.content, true, t.modified)
+  );
+  hasUnsaved = tabs.some(t => t.modified);
   updateUnsavedFlag();
 });
 
-// Réception d’un fichier sauvegardé
-ipcRenderer.on("file-saved", (event, filePath) => {
-  const tab = tabs.find(t => t.id === currentTabId);
-  if (tab) {
-    tab.filePath = filePath;
-    tab.name = filePath.split(/[/\\]/).pop();
-    tab.modified = false;
-    renderTabs();
-    updateUnsavedFlag();
-  }
+// Création d’un onglet vierge sur demande
+ipcRenderer.on("create-new-tab", () => createTab());
+
+// Réception d’un fichier ouvert via menu ou récents
+ipcRenderer.on("file-opened", (_, content, filePath) => {
+  createTab(filePath, content);
 });
 
-// Demande de fermeture d’onglet
+// Après sauvegarde réussie
+ipcRenderer.on("file-saved", (_, filePath) => {
+  const tab = tabs.find(t => t.id === currentTabId);
+  if (!tab) return;
+  tab.filePath = filePath;
+  tab.name     = path.basename(filePath);
+  tab.modified = false;
+  hasUnsaved   = tabs.some(t => t.modified);
+  renderTabs();
+  updateUnsavedFlag();
+  updateSession();
+});
+
+// Demande de fermeture d’un onglet
 function requestTabClose(tabId) {
   const tab = tabs.find(t => t.id === tabId);
-  if (tab.modified) {
+  if (tab && tab.modified) {
     pendingCloseTabId = tabId;
     modal.classList.add("show");
   } else {
@@ -157,68 +160,56 @@ function requestTabClose(tabId) {
   }
 }
 
-// Modale : Enregistrer
+// Bouton modale « Enregistrer »
 saveModalBtn.addEventListener("click", () => {
   const tab = tabs.find(t => t.id === pendingCloseTabId);
-  if (tab.filePath) {
-    ipcRenderer.send("save-file", tab.filePath, tab.content);
-  } else {
-    ipcRenderer.send("save-file-as", tab.content);
-  }
-  // on attend le 'file-saved' pour fermer l'onglet
+  if (!tab) return;
+  if (tab.filePath) ipcRenderer.send("save-file", tab.filePath, tab.content);
+  else               ipcRenderer.send("save-file-as", tab.content);
   ipcRenderer.once("file-saved", () => {
     closeTab(pendingCloseTabId);
     modal.classList.remove("show");
   });
 });
 
-// Modale : Quitter sans enregistrer
+// Bouton modale « Quitter sans enregistrer »
 quitWithoutSavingBtn.addEventListener("click", () => {
   closeTab(pendingCloseTabId);
   modal.classList.remove("show");
 });
 
-// Modale : Annuler
+// Bouton modale « Annuler »
 cancelModalBtn.addEventListener("click", () => {
   pendingCloseTabId = null;
   modal.classList.remove("show");
 });
 
-// Ferme un onglet, rafraîchit et peut fermer l'app
+// Ferme un onglet et met à jour la session
 function closeTab(tabId) {
   const idx = tabs.findIndex(t => t.id === tabId);
-  if (idx !== -1) {
-    tabs.splice(idx, 1);
-    if (tabId === currentTabId) {
-      const next = tabs[idx] || tabs[idx - 1];
-      currentTabId = next ? next.id : null;
-      next ? loadTabContent(next) : (editor.value = "");
-    }
-    renderTabs();
-    updateUnsavedFlag();
-    if (tabs.length === 0) {
-      ipcRenderer.send("close-all-tabs");
-    }
+  if (idx < 0) return;
+  tabs.splice(idx, 1);
+  if (tabId === currentTabId) {
+    const next = tabs[idx] || tabs[idx - 1];
+    currentTabId = next ? next.id : null;
+    if (next) loadTabContent(next);
+    else       editor.value = "";
   }
+  hasUnsaved = tabs.some(t => t.modified);
+  renderTabs();
+  updateUnsavedFlag();
+  updateSession();
+  if (tabs.length === 0) ipcRenderer.send("close-all-tabs");
 }
 
-// Sauvegarde globale avant fermeture de l'app
+// Lorsque main demande un prompt-global
 ipcRenderer.on("app-close-save", () => {
-  function saveNext() {
-    const tab = tabs.find(t => t.modified);
-    if (!tab) {
-      ipcRenderer.send("app-close-saved");
-      return;
-    }
-    if (tab.filePath) {
-      ipcRenderer.send("save-file", tab.filePath, tab.content);
-    } else {
-      ipcRenderer.send("save-file-as", tab.content);
-    }
-    ipcRenderer.once("file-saved", () => {
-      tab.modified = false;
-      saveNext();
-    });
-  }
-  saveNext();
+  requestTabClose(currentTabId);
+});
+
+// À l'ouverture, si pas de session restaurée, créer un onglet vide
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    if (!sessionRestored && tabs.length === 0) createTab();
+  }, 100);
 });

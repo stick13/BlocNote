@@ -3,11 +3,18 @@ const { ipcRenderer } = require('electron');
 
 const openBtn     = document.getElementById('openFile');
 const newBtn      = document.getElementById('newFile');
+const resumeBtn   = document.getElementById('resumeSession');
 const recentList  = document.getElementById('recent-list');
 
+// Masquer le bouton « Reprendre » par défaut
+resumeBtn.style.display = 'none';
+
+// Actions des boutons
 openBtn.addEventListener('click', () => ipcRenderer.send('open-file'));
 newBtn.addEventListener('click', () => ipcRenderer.send('new-file'));
+resumeBtn.addEventListener('click', () => ipcRenderer.send('resume-session'));
 
+// Formattage du délai depuis le timestamp
 function formatTimeDiff(ts) {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
@@ -18,6 +25,7 @@ function formatTimeDiff(ts) {
   return `il y a ${days} jour${days > 1 ? 's' : ''}`;
 }
 
+// Chargement et affichage des fichiers récents
 async function loadRecent() {
   const recents = await ipcRenderer.invoke('get-recent');
   recentList.innerHTML = '';
@@ -38,26 +46,30 @@ async function loadRecent() {
       <span class="recent-time">${formatTimeDiff(item.timestamp)}</span>
       <span class="recent-remove" title="Supprimer">🗑️</span>
     `;
-
+    // Clic pour ouvrir (sauf sur la poubelle)
     row.addEventListener('click', e => {
       if (e.target.classList.contains('recent-remove')) return;
       ipcRenderer.send('open-file-path', item.path);
     });
-
+    // Clic poubelle pour supprimer
     row.querySelector('.recent-remove').addEventListener('click', async e => {
       e.stopPropagation();
       await ipcRenderer.invoke('remove-recent', item.path);
       loadRecent();
     });
-
     recentList.appendChild(row);
   });
 }
 
-// If file not found when clicking an item
-ipcRenderer.on('file-not-found', (event, filePath) => {
-  alert('Ce fichier n’existe plus ou est introuvable.');
+// Au démarrage : afficher le bouton Reprendre si session existante
+window.addEventListener('DOMContentLoaded', async () => {
+  const hasSession = await ipcRenderer.invoke('has-session');
+  if (hasSession) resumeBtn.style.display = 'inline-block';
   loadRecent();
 });
 
-window.addEventListener('DOMContentLoaded', loadRecent);
+// Alerte si fichier introuvable
+ipcRenderer.on('file-not-found', () => {
+  alert('Ce fichier n’existe plus ou est introuvable.');
+  loadRecent();
+});
