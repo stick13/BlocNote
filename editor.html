@@ -24,16 +24,20 @@
       <textarea id="editor" placeholder="Commencez à écrire ici…"></textarea>
     </main>
   </div>
+  <!-- Modale de confirmation de fermeture -->
   <div id="confirmation-modal" class="modal">
     <div class="modal-content">
-      <p>Ce fichier a été modifié. Que souhaitez-vous faire ?</p>
-      <div class="modal-buttons">
-        <button id="save-modal">Enregistrer</button>
-        <button id="quit-without-saving">Quitter sans enregistrer</button>
-        <button id="cancel-modal">Annuler</button>
+      <div class="modal-header">
+        <span class="modal-icon">✏️</span>
+        <span class="modal-text">Ce fichier a été modifié. Que souhaitez-vous faire ?</span>
       </div>
+    <div class="modal-buttons">
+      <button id="save-modal">Enregistrer</button>
+      <button id="quit-without-saving">Quitter sans enregistrer</button>
+      <button id="cancel-modal">Annuler</button>
     </div>
   </div>
+</div>
   <script src="renderer.js"></script>
 </body>
 </html>
