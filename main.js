@@ -6,84 +6,55 @@ const { URL } = require('url');
 
 let mainWindow;
 
-// Chemins vers les fichiers de stockage
 const recentStore  = path.join(app.getPath('userData'), 'recent.json');
 const sessionStore = path.join(app.getPath('userData'), 'session.json');
 
-// --- Fonctions pour gérer les fichiers récents ---
 function loadRecent() {
-  try {
-    return JSON.parse(fs.readFileSync(recentStore, 'utf8'));
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(fs.readFileSync(recentStore, 'utf8')); }
+  catch { return []; }
 }
 function saveRecent(list) {
-  fs.writeFileSync(
-    recentStore,
-    JSON.stringify(list.slice(0, 10), null, 2),
+  fs.writeFileSync(recentStore,
+    JSON.stringify(list.slice(0,10), null,2),
     'utf8'
   );
 }
 function addToRecent(fp) {
-  const maintenant = Date.now();
-  let rec = loadRecent().filter(item => item.path !== fp);
-  rec.unshift({ path: fp, timestamp: maintenant });
+  const now = Date.now();
+  let rec = loadRecent().filter(i => i.path !== fp);
+  rec.unshift({ path: fp, timestamp: now });
   saveRecent(rec);
 }
 
-// --- Fonctions pour gérer la session (onglets) ---
 function loadSession() {
-  try {
-    return JSON.parse(fs.readFileSync(sessionStore, 'utf8'));
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(fs.readFileSync(sessionStore, 'utf8')); }
+  catch { return []; }
 }
 function saveSession(tabs) {
-  fs.writeFileSync(
-    sessionStore,
-    JSON.stringify(tabs, null, 2),
+  fs.writeFileSync(sessionStore,
+    JSON.stringify(tabs, null,2),
     'utf8'
   );
 }
 
-// Création de la fenêtre principale
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 800,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    }
+    width: 1000, height: 800,
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
-
-  // Toujours démarrer sur la page d'accueil
   mainWindow.loadFile('index.html');
 }
 
 app.whenReady().then(createWindow);
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
-// Quitte quand toutes les fenêtres sont fermées (sauf sur macOS)
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-
-// --- IPC pour persister la session ---
 ipcMain.on('session-save', (_, tabs) => {
   saveSession(tabs);
 });
 
-// Indique si une session existe
-ipcMain.handle('has-session', () => {
-  return loadSession().length > 0;
-});
+ipcMain.handle('has-session', () => loadSession().length > 0);
 
-// Reprendre la session depuis la page d'accueil
 ipcMain.on('resume-session', () => {
   const sessionTabs = loadSession();
   if (sessionTabs.length > 0) {
@@ -92,7 +63,6 @@ ipcMain.on('resume-session', () => {
   }
 });
 
-// --- IPC pour ouvrir un fichier et gérer l’éditeur ---
 ipcMain.on('open-file', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: 'Ouvrir un fichier',
@@ -103,50 +73,63 @@ ipcMain.on('open-file', async () => {
   const fp = filePaths[0];
   fs.readFile(fp, 'utf8', async (err, data) => {
     if (err) return;
+    const currentURL  = mainWindow.webContents.getURL();
+    const page        = path.basename(new URL(currentURL).pathname);
     const sessionTabs = loadSession();
-    await mainWindow.loadFile('editor.html');
-    if (sessionTabs.length) {
-      mainWindow.webContents.send('session-data', sessionTabs);
+    if (page !== 'editor.html') {
+      await mainWindow.loadFile('editor.html');
+      if (sessionTabs.length) mainWindow.webContents.send('session-data', sessionTabs);
     }
     mainWindow.webContents.send('file-opened', data, fp);
     addToRecent(fp);
   });
 });
 
-// Nouveau fichier brut
 ipcMain.on('new-file', () => {
+  const currentURL  = mainWindow.webContents.getURL();
+  const page        = path.basename(new URL(currentURL).pathname);
   const sessionTabs = loadSession();
-  mainWindow.loadFile('editor.html').then(() => {
-    if (sessionTabs.length) {
-      mainWindow.webContents.send('session-data', sessionTabs);
-    }
+  if (page !== 'editor.html') {
+    mainWindow.loadFile('editor.html').then(() => {
+      if (sessionTabs.length) mainWindow.webContents.send('session-data', sessionTabs);
+      mainWindow.webContents.send('create-new-tab');
+    });
+  } else {
     mainWindow.webContents.send('create-new-tab');
-  });
+  }
 });
 
-// Sauvegarde simple
 ipcMain.on('save-file', (_, filePath, content) => {
-  fs.writeFile(filePath, content, 'utf8', () => {
-    mainWindow.webContents.send('file-saved', filePath);
-    addToRecent(filePath);
+  // si content est null ou undefined, on écrit une chaîne vide
+  const data = typeof content === 'string' ? content : '';
+  fs.writeFile(filePath, data, 'utf8', (err) => {
+    if (err) {
+      console.error('Erreur lors de la sauvegarde :', err);
+    } else {
+      mainWindow.webContents.send('file-saved', filePath);
+      addToRecent(filePath);
+    }
   });
 });
 
-// « Enregistrer sous... »
 ipcMain.on('save-file-as', async (_, content) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-    title: 'Enregistrer sous...',
+    title: 'Enregistrer sous…',
     defaultPath: 'nouveau.txt',
     filters: [{ name: 'Textes', extensions: ['txt','md','js','json','html','css'] }]
   });
   if (canceled || !filePath) return;
-  fs.writeFile(filePath, content, 'utf8', () => {
-    mainWindow.webContents.send('file-saved', filePath);
-    addToRecent(filePath);
+  const data = typeof content === 'string' ? content : '';
+  fs.writeFile(filePath, data, 'utf8', (err) => {
+    if (err) {
+      console.error('Erreur lors de « Enregistrer sous » :', err);
+    } else {
+      mainWindow.webContents.send('file-saved', filePath);
+      addToRecent(filePath);
+    }
   });
 });
 
-// Ouvrir un chemin spécifique depuis les récents
 ipcMain.on('open-file-path', (_, filePath) => {
   if (!fs.existsSync(filePath)) {
     const updated = loadRecent().filter(i => i.path !== filePath);
@@ -159,27 +142,25 @@ ipcMain.on('open-file-path', (_, filePath) => {
       mainWindow.webContents.send('file-not-found', filePath);
       return;
     }
+    const currentURL  = mainWindow.webContents.getURL();
+    const page        = path.basename(new URL(currentURL).pathname);
     const sessionTabs = loadSession();
-    await mainWindow.loadFile('editor.html');
-    if (sessionTabs.length) {
-      mainWindow.webContents.send('session-data', sessionTabs);
+    if (page !== 'editor.html') {
+      await mainWindow.loadFile('editor.html');
+      if (sessionTabs.length) mainWindow.webContents.send('session-data', sessionTabs);
     }
     mainWindow.webContents.send('file-opened', data, filePath);
     addToRecent(filePath);
   });
 });
 
-// Fermer tous les onglets => quitter l'application
 ipcMain.on('close-all-tabs', () => {
   if (mainWindow) mainWindow.close();
 });
 
-// Fournir la liste des fichiers récents (existants)
-ipcMain.handle('get-recent', () => {
-  return loadRecent().filter(i => fs.existsSync(i.path));
-});
-
-// Supprimer un élément de la liste récente
+ipcMain.handle('get-recent', () =>
+  loadRecent().filter(i => fs.existsSync(i.path))
+);
 ipcMain.handle('remove-recent', (_, filePath) => {
   const updated = loadRecent().filter(i => i.path !== filePath);
   saveRecent(updated);
